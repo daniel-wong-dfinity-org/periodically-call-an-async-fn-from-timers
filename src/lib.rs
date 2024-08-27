@@ -69,7 +69,12 @@ fn post_upgrade(config: Option<Config>) {
     do_thing_repeatedly_in_the_background(IcCdkSetTimer {}, St {});
 }
 
-fn do_thing_repeatedly_in_the_background(set_timer: impl SetTimer + Clone + 'static, tr: impl Tr + 'static) {
+fn do_thing_repeatedly_in_the_background<SetTimerImpl, TrImpl>(
+    set_timer: SetTimerImpl, tr: TrImpl)
+where
+    SetTimerImpl: SetTimer + Clone + 'static,
+    TrImpl: Tr + 'static,
+{
     let next_set_timer = set_timer.clone();
 
     set_timer.set_timer(

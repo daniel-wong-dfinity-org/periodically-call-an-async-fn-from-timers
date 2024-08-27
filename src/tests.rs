@@ -1,9 +1,15 @@
 use super::*;
-use candid_parser::utils::{CandidSource, service_equal};
+use candid_parser::{
+    utils::{
+        CandidSource,
+        service_equal,
+    },
+};
+
 
 #[test]
 fn test_implemented_interface_matches_declared_interface_exactly() {
-    let declared_interface = CandidSource::Text(include_str!("../my_canister.did"));
+    let declared_interface = CandidSource::Text(include_str!("../my-canister.did"));
 
     // The line below generates did types and service definition from the
     // methods annotated with `candid_method` above. The definition is then
@@ -14,4 +20,18 @@ fn test_implemented_interface_matches_declared_interface_exactly() {
 
     let result = service_equal(declared_interface, implemented_interface);
     assert!(result.is_ok(), "{:?}\n\n", result.unwrap_err());
+}
+
+#[derive(Clone)]
+struct FakeSetTimer {}
+
+impl SetTimer for FakeSetTimer {
+    fn set_timer(&self, _delay: Duration, work: Box<dyn FnOnce () -> ()>) {
+        work()
+    }
+}
+
+#[test]
+fn test_do_thing_repeatedly_in_the_background() {
+    do_thing_repeatedly_in_the_background(FakeSetTimer {}, St {});
 }
