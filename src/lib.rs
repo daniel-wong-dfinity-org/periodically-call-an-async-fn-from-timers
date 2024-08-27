@@ -43,6 +43,19 @@ impl Tr for St {
     }
 }
 
+trait SetTimer {
+    fn set_timer(&self, delay: Duration, work: Box<dyn FnOnce () -> ()>);
+}
+
+#[derive(Clone)]
+struct IcCdkSetTimer {}
+
+impl SetTimer for IcCdkSetTimer {
+    fn set_timer(&self, delay: Duration, work: Box<dyn FnOnce () -> ()>) {
+        ic_cdk_timers::set_timer(delay, work);
+    }
+}
+
 #[init]
 fn init(config: Config) {
     storage::stable_save((config,)).expect("Failed to save config to stable storage");
@@ -53,18 +66,20 @@ fn post_upgrade(config: Option<Config>) {
     let config = config.unwrap();
     storage::stable_save((config,)).expect("Failed to save config to stable storage");
 
-    do_thing_repeatedly_in_the_background(St {});
+    do_thing_repeatedly_in_the_background(IcCdkSetTimer {}, St {});
 }
 
-fn do_thing_repeatedly_in_the_background(tr: impl Tr + 'static) {
-    ic_cdk_timers::set_timer(
+fn do_thing_repeatedly_in_the_background(set_timer: impl SetTimer + Clone + 'static, tr: impl Tr + 'static) {
+    let next_set_timer = set_timer.clone();
+
+    set_timer.set_timer(
         Duration::from_millis(500),
-        move || {
+        Box::new(move || {
             ic_cdk::spawn(async {
                 tr.howdy().await;
-                do_thing_repeatedly_in_the_background(tr);
+                do_thing_repeatedly_in_the_background(next_set_timer, tr);
             })
-        },
+        }),
     );
 }
 
