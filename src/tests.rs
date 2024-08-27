@@ -26,12 +26,24 @@ fn test_implemented_interface_matches_declared_interface_exactly() {
 struct FakeSetTimer {}
 
 impl SetTimer for FakeSetTimer {
-    fn set_timer(&self, _delay: Duration, work: Box<dyn FnOnce () -> ()>) {
-        work()
+    fn set_timer(&self, _delay: Duration, work: Box<dyn Send + FnOnce () -> ()>) {
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            work();
+        });
     }
 }
 
 #[test]
 fn test_do_thing_repeatedly_in_the_background() {
+    // There are at least a couple (surmountable?) problems with this test:
+    //
+    //     1. do_thing_repeatedly_in_the_background calls ic_cdk::spawn, which
+    //        ofc, does not work in unit tests. This can probably be easily
+    //        overcome by introducing a Spawn trait.
+    //
+    //     2. There is no way to see the effect of St. If we pass it a reference
+    //        to something, we could inspect that object later. E.g.
+    //        thread_local! { static M: RefCell<...> = ...; }
     do_thing_repeatedly_in_the_background(FakeSetTimer {}, St {});
 }

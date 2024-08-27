@@ -36,22 +36,19 @@ struct St {}
 #[async_trait]
 impl Tr for St {
     async fn howdy(&self) {
-        let (config,) = storage::stable_restore::<(Config,)>()
-            .expect("Unable to retrieve Config from stable memory.");
-
-        println!("\nConfig: {:#?}\n", config);
+        println!("Ahoy!");
     }
 }
 
 trait SetTimer {
-    fn set_timer(&self, delay: Duration, work: Box<dyn FnOnce () -> ()>);
+    fn set_timer(&self, delay: Duration, work: Box<dyn Send + FnOnce () -> ()>);
 }
 
 #[derive(Clone)]
 struct IcCdkSetTimer {}
 
 impl SetTimer for IcCdkSetTimer {
-    fn set_timer(&self, delay: Duration, work: Box<dyn FnOnce () -> ()>) {
+    fn set_timer(&self, delay: Duration, work: Box<dyn Send + FnOnce () -> ()>) {
         ic_cdk_timers::set_timer(delay, work);
     }
 }
@@ -72,8 +69,8 @@ fn post_upgrade(config: Option<Config>) {
 fn do_thing_repeatedly_in_the_background<SetTimerImpl, TrImpl>(
     set_timer: SetTimerImpl, tr: TrImpl)
 where
-    SetTimerImpl: SetTimer + Clone + 'static,
-    TrImpl: Tr + 'static,
+    SetTimerImpl: SetTimer + Send + Clone + 'static,
+    TrImpl: Tr + Send + 'static,
 {
     let next_set_timer = set_timer.clone();
 
