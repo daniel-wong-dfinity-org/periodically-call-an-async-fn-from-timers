@@ -13,6 +13,9 @@ use std::{
     fmt::{
         Debug,
     },
+    future::{
+        Future,
+    },
     time::{
         Duration,
     },
@@ -27,29 +30,38 @@ struct Config {
 }
 
 #[async_trait]
-trait Tr {
+trait Greeter {
     async fn howdy(&self);
 }
 
-struct St {}
+struct GreeterImpl {}
 
 #[async_trait]
-impl Tr for St {
+impl Greeter for GreeterImpl {
     async fn howdy(&self) {
         println!("Ahoy!");
     }
 }
 
-trait SetTimer {
+trait CanisterHost {
     fn set_timer(&self, delay: Duration, work: Box<dyn Send + FnOnce () -> ()>);
+    fn spawn<FutureImpl>(&self, future: FutureImpl)
+        where FutureImpl: Future<Output = ()> + Send + 'static;
 }
 
 #[derive(Clone)]
-struct IcCdkSetTimer {}
+struct RealCanisterHost {}
 
-impl SetTimer for IcCdkSetTimer {
+impl CanisterHost for RealCanisterHost {
     fn set_timer(&self, delay: Duration, work: Box<dyn Send + FnOnce () -> ()>) {
         ic_cdk_timers::set_timer(delay, work);
+    }
+
+    fn spawn<FutureImpl>(&self, future: FutureImpl)
+    where
+        FutureImpl: Future<Output = ()> + Send + 'static
+    {
+        ic_cdk::spawn(future);
     }
 }
 
@@ -63,23 +75,21 @@ fn post_upgrade(config: Option<Config>) {
     let config = config.unwrap();
     storage::stable_save((config,)).expect("Failed to save config to stable storage");
 
-    do_thing_repeatedly_in_the_background(IcCdkSetTimer {}, St {});
+    do_thing_repeatedly_in_the_background(RealCanisterHost {}, GreeterImpl {});
 }
 
-fn do_thing_repeatedly_in_the_background<SetTimerImpl, TrImpl>(
-    set_timer: SetTimerImpl, tr: TrImpl)
+fn do_thing_repeatedly_in_the_background<CanisterHostImpl, GreeterImpl>(
+    canister_host: CanisterHostImpl, greeter: GreeterImpl)
 where
-    SetTimerImpl: SetTimer + Send + Clone + 'static,
-    TrImpl: Tr + Send + 'static,
+    CanisterHostImpl: CanisterHost + Send + Clone + 'static,
+    GreeterImpl: Greeter + Send + 'static,
 {
-    let next_set_timer = set_timer.clone();
-
-    set_timer.set_timer(
+    canister_host.clone().set_timer(
         Duration::from_millis(500),
         Box::new(move || {
-            ic_cdk::spawn(async {
-                tr.howdy().await;
-                do_thing_repeatedly_in_the_background(next_set_timer, tr);
+            canister_host.clone().spawn(async {
+                greeter.howdy().await;
+                do_thing_repeatedly_in_the_background(canister_host, greeter);
             })
         }),
     );

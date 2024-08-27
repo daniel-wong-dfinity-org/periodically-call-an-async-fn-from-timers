@@ -5,6 +5,7 @@ use candid_parser::{
         service_equal,
     },
 };
+use std::sync::{Arc, Mutex, Condvar};
 
 
 #[test]
@@ -23,27 +24,77 @@ fn test_implemented_interface_matches_declared_interface_exactly() {
 }
 
 #[derive(Clone)]
-struct FakeSetTimer {}
+struct FakeCanisterHost {
+    is_done: Arc<(Mutex<bool>, Condvar)>,
+    stop: Arc<(Mutex<bool>, Condvar)>,
+}
 
-impl SetTimer for FakeSetTimer {
+impl CanisterHost for FakeCanisterHost {
     fn set_timer(&self, _delay: Duration, work: Box<dyn Send + FnOnce () -> ()>) {
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(50));
+        let is_done = Arc::clone(&self.is_done);
+        self.spawn(async move {
             work();
+
+            println!("Work is done.");
+
+            {
+                let (mutex, cond_var) = &*is_done;
+                let mut done = mutex.lock().unwrap();
+                *done = true;
+                cond_var.notify_one();
+            }
         });
+    }
+
+    fn spawn<FutureImpl>(&self, future: FutureImpl)
+    where
+        FutureImpl: Future<Output = ()> + Send + 'static
+    {
+        {
+            let (mutex, _) = &*self.stop;
+            let stop = mutex.lock().unwrap();
+            if *stop {
+                return;
+            }
+        }
+
+        tokio::task::spawn(future);
     }
 }
 
 #[test]
 fn test_do_thing_repeatedly_in_the_background() {
-    // There are at least a couple (surmountable?) problems with this test:
-    //
-    //     1. do_thing_repeatedly_in_the_background calls ic_cdk::spawn, which
-    //        ofc, does not work in unit tests. This can probably be easily
-    //        overcome by introducing a Spawn trait.
-    //
-    //     2. There is no way to see the effect of St. If we pass it a reference
-    //        to something, we could inspect that object later. E.g.
-    //        thread_local! { static M: RefCell<...> = ...; }
-    do_thing_repeatedly_in_the_background(FakeSetTimer {}, St {});
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+
+    runtime.block_on(async {
+        let is_done = Arc::new((Mutex::new(false), Condvar::new()));
+        let wait_for_is_done = Arc::clone(&is_done);
+
+        let stop = Arc::new((Mutex::new(false), Condvar::new()));
+        let send_stop = Arc::clone(&stop);
+
+        // There are at least a couple (surmountable?) problems with this test:
+        //
+        //     1. There is no way to see the effect of GreeterImpl. If we pass
+        //        it a reference to something, we could inspect that object
+        //        later. E.g. thread_local! { static M: RefCell<...> = ...; }
+        do_thing_repeatedly_in_the_background(FakeCanisterHost { is_done, stop }, GreeterImpl {});
+
+        {
+            let (mutex, cond_var) = &*wait_for_is_done;
+            let mut is_done = mutex.lock().unwrap();
+            while !*is_done {
+                is_done = cond_var.wait(is_done).unwrap();
+            }
+        }
+
+        {
+            let (mutex, cond_var) = &*send_stop;
+            let mut stop = mutex.lock().unwrap();
+            *stop = true;
+            cond_var.notify_one();
+        }
+
+        println!("END");
+    });
 }
