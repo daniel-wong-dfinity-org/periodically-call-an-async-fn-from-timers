@@ -1,0 +1,18 @@
+[package]
+name = "my-canister"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+async-trait = "0.1"
+candid = "0.8"
+ic-cdk = "0.8"
+ic-cdk-macros = "0.8"
+ic-cdk-timers = "0.8"
+serde = { version = "1", features = [ "derive" ] }
+
+[dev-dependencies]
+candid_parser = "0.1"

@@ -1,0 +1,5 @@
+type Config = record { message: text };
+
+service : (Config) -> {
+    "get_config" : () -> (Config) query;
+}
